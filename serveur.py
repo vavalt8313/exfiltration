@@ -86,14 +86,14 @@ def start_smtp_server(chunk_file):
                 if part.get_content_disposition() == "attachment":
                     with open(chunk_file, "ab") as f:
                         f.write(urlsafe_b64decode(part.get_payload(decode=True)))
-                    print(f"📎 Pièce jointe sauvegardée : {chunk_file}")
+                    print(f"[SMTP] Pièce jointe sauvegardée : {chunk_file}")
 
             return "250 OK - Pièces jointes enregistrées"
 
     handler = MailHandler()
     controller = Controller(handler, hostname="0.0.0.0", port=PORT_SMTP)
     controller.start()
-    print("📡 Serveur SMTP prêt sur 127.0.0.1:1025")
+    print("Serveur SMTP prêt sur 127.0.0.1:1025")
 
     def watchdog():
         start_time = time.time()
@@ -132,6 +132,7 @@ class CnCRequestHandler(http.server.BaseHTTPRequestHandler):
         params = parse_qs(post_data)
 
         chunk = params.get("chunk", [""])[0]
+        print(f"[HTTP] Chunk reçu ({len(chunk)} octets)")
         writer_b64(chunk, self.server.chunk_file)
 
         self.send_response(200)
@@ -259,6 +260,7 @@ def start_ftp_server(chunk_file):
                 dest.write(urlsafe_b64decode(src.read()))
             os.remove(file_path)
             MyHandler.last_activity_time = time.time()
+            print("[FTP] Chunk reçu et écrit dans", chunk_file)
 
     handler = MyHandler
     handler.authorizer = authorizer
@@ -304,6 +306,7 @@ def start_ftps_server(chunk_file):
                 dest.write(src.read())
             os.remove(file_path)
             MyFTPSHandler.last_activity_time = time.time()
+            print("[FTPS] Chunk reçu et écrit dans", chunk_file)
 
     handler = MyFTPSHandler
     handler.authorizer = authorizer
@@ -399,8 +402,6 @@ class MySFTPServer(asyncssh.SFTPServer):
            Read tmp, decode if possible, append to chunk_file, then remove tmp."""
         try:
             tmp_path = getattr(file_obj, "name", None)
-
-            # Flush & close the file object returned by open()
             try:
                 file_obj.flush()
             except Exception:
@@ -453,7 +454,6 @@ async def start_sftp_async(chunk_file):
         os.remove(chunk_file)
     os.makedirs(os.path.dirname(chunk_file), exist_ok=True)
 
-    # Création du serveur SSH + SFTP intégré
     server = await asyncssh.create_server(
         lambda: MySSHServer_SFTP(),
         '', PORT_SFTP,
