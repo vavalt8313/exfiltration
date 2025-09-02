@@ -706,6 +706,10 @@ def signal_listener():
                             LIST_OPENED_SERVERS.append(signal_type)
                             thread = threading.Thread(target=start_snmp_server, args=(chunk_file,))
                             thread.start()
+                        elif signal_type == "tor" and (signal_type not in LIST_OPENED_SERVERS):
+                            LIST_OPENED_SERVERS.append(signal_type)
+                            thread = threading.Thread(target=start_tor_server, args=(chunk_file,), daemon=True)
+                            thread.start()
                     except Exception as e:
                         print(f"[!] Erreur de parsing du signal : {e}")
 
