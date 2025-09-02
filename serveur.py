@@ -2,15 +2,18 @@
 import os
 import sys
 import ssl
+import uuid
 import time
 import aioftp
 import socket
+import signal
 import pathlib
 import asyncio
 import binascii
 import platform
 import asyncssh
 import threading
+import subprocess
 import http.server
 import socketserver
 from pysnmp.smi import instrum
@@ -28,6 +31,7 @@ from dnslib.server import DNSServer, BaseResolver
 from pyftpdlib.authorizers import DummyAuthorizer
 from pysnmp.entity.rfc3413 import cmdrsp, context
 from pyftpdlib.handlers import TLS_FTPHandler, FTPHandler
+from flask import Flask, request, jsonify, redirect, send_from_directory
 
 TIMEOUT = 30
 PORT_DNS = 53
@@ -591,6 +595,59 @@ def start_snmp_server(chunk_file):
             snmpEngine.transport_dispatcher.close_dispatcher()
         except Exception as e:
             print(f"[SNMP] Erreur lors de la fermeture du dispatcher: {e}")
+
+# ========================
+# EXFILTRATION TOR (HTTP)
+# ========================
+
+def start_tor_server(chunk_file, port=8080):
+
+    app = Flask(__name__)
+
+    if os.path.exists(chunk_file):
+        os.remove(chunk_file)
+    os.makedirs(os.path.dirname(chunk_file), exist_ok=True)
+    system = platform.system()
+
+    if system == "Linux":
+        process = subprocess.Popen(("sudo", "-u", "debian-tor", "tor", "-f", "/etc/tor/torrc"))
+        print("Waiting for Tor to bootstrap...")
+        time.sleep(10)  # pour laisser le temps à Tor de se connecter
+    
+    elif system == "Windows":
+        tor_path = pathlib.Path("../tor/tor.exe")
+        if not tor_path.exists():
+            print("Tor executable not found at ../tor/tor.exe")
+            return
+        process = subprocess.Popen((str(tor_path), "-f", "../tor/torrc"))
+        print("Waiting for Tor to bootstrap...")
+        time.sleep(10)  # pour laisser le temps à Tor de se connecter
+
+    @app.route("/upload", methods=["POST"])
+    def upload():
+        filename = f"chunk_{uuid.uuid4().hex[:8]}.txt"
+        file = request.files.get("file")
+        if not file:
+            return jsonify({"error": "No file uploaded"}), 400
+        file.save(filename)
+        with open(filename, "rb") as f:
+            chunk = f.read()
+        with open(chunk_file, "ab") as f:
+            f.write(chunk)
+        os.remove(filename)
+        return jsonify({"status": f"Received {file.filename}"}), 200
+
+    @app.route("/")
+    def index():
+        return redirect("/index.html")
+
+    @app.route("/<path:path>")
+    def static_proxy(path):
+        return send_from_directory(".", path)
+
+    app.run(host="127.0.0.1", port=8080) #Port will be 9050 at the onion address
+    process.send_signal(signal.SIGINT)
+    print("Tor stopped.")
 
 # ========================
 # SIGNALISATION

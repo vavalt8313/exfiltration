@@ -13,6 +13,4 @@ install:
 	pip install -r mandatory.txt
 
 exe:
-	sudo systemctl stop tor
-	sudo -u debian-tor tor &
 	sudo $(PYTHON) $(SERVEUR)
