@@ -10,7 +10,7 @@ clean:
 re: clean all
 
 install:
-	pip install -r mandatory.txt
+	sudo ~/partage_venv/bin/pip install -r mandatory.txt
 
 exe:
 	sudo $(PYTHON) $(SERVEUR)

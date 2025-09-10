@@ -16,6 +16,7 @@ import threading
 import subprocess
 import http.server
 import socketserver
+from pythonping import ping
 from pysnmp.smi import instrum
 from urllib.parse import parse_qs
 from email import message_from_bytes
@@ -82,7 +83,9 @@ def start_smtp_server(chunk_file):
 
     if os.path.exists(chunk_file):
         os.remove(chunk_file)
-    class MailHandler:
+    class MailHandler():
+        def __init__(self):
+            self.last_activity_time = time.time()
         async def handle_DATA(self, server, session, envelope):
             msg = message_from_bytes(envelope.content)
 
@@ -91,25 +94,29 @@ def start_smtp_server(chunk_file):
                     with open(chunk_file, "ab") as f:
                         f.write(urlsafe_b64decode(part.get_payload(decode=True)))
                     print(f"[SMTP] Pièce jointe sauvegardée : {chunk_file}")
-
+            self.last_activity_time = time.time()
             return "250 OK - Pièces jointes enregistrées"
 
-    handler = MailHandler()
-    controller = Controller(handler, hostname="0.0.0.0", port=PORT_SMTP)
+    with MailHandler() as mh:
+        def watchdog():
+            start_time = time.time()
+            print("Démarrage du watchdog SMTP")
+            while True:
+                print(".", end="", flush=True)
+                time.sleep(1)
+                if mh.last_activity_time - start_time > TIMEOUT:
+                    print(f"[!] Aucune activité SMTP depuis {TIMEOUT}s — arrêt du serveur SMTP")
+                    controller.stop()
+                    LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("smtp"))
+                    break
+
+        threading.Thread(target=watchdog, daemon=True).start()
+
+        handler = mh
+    controller = Controller(handler, hostname="0.0.0.0", port=PORT_SMTP, ready_timeout=100)
     controller.start()
-    print("Serveur SMTP prêt sur 127.0.0.1:1025")
+    print("Serveur SMTP prêt sur 0.0.0.0:1025")
 
-    def watchdog():
-        start_time = time.time()
-        while True:
-            time.sleep(1)
-            if time.time() - start_time > TIMEOUT:
-                print(f"[!] Aucune activité SMTP depuis {TIMEOUT}s — arrêt du serveur SMTP")
-                controller.stop()
-                LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("smtp"))
-                break
-
-    threading.Thread(target=watchdog, daemon=True).start()
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -275,7 +282,7 @@ def start_ftp_server(chunk_file):
     def watchdog():
         while True:
             time.sleep(1)
-            if time.time() - handler.last_activity_time > TIMEOUT:
+            if time.time() - handler.last_activity_time > TIMEOUT * 10:
                 print(f"[!] Aucune activité FTP depuis {TIMEOUT}s — arrêt du serveur FTP")
                 server.close_all()
                 LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("ftp"))
@@ -324,7 +331,7 @@ def start_ftps_server(chunk_file):
     def watchdog():
         while True:
             time.sleep(1)
-            if time.time() - handler.last_activity_time > TIMEOUT:
+            if time.time() - handler.last_activity_time > TIMEOUT * 10:
                 print(f"[!] No FTPS activity for {TIMEOUT}s — shutting down FTPS server")
                 server.close_all()
                 if "ftps" in LIST_OPENED_SERVERS:
@@ -473,7 +480,7 @@ async def start_sftp_async(chunk_file):
     async def watchdog():
         while True:
             await asyncio.sleep(1)
-            if time.time() - MySFTPServer.last_activity_time > TIMEOUT:
+            if time.time() - MySFTPServer.last_activity_time > TIMEOUT * 10:
                 print(f"[!] Aucune activité SFTP depuis {TIMEOUT}s — arrêt du serveur SFTP")
                 server.close()
                 LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("sftp"))
@@ -508,7 +515,7 @@ def start_icmp_server(chunk_file="recu.txt", nombre_paquets=None):
 
     try:
         while True:
-            data, addr = s.recvfrom(2030)
+            data, addr = s.recvfrom(1500)
             if first_packet:
                 real_adress = addr[0]
                 first_packet = False
@@ -517,11 +524,16 @@ def start_icmp_server(chunk_file="recu.txt", nombre_paquets=None):
             if addr[0] != real_adress:
                 print(f"[ICMP] Paquet reçu d'une adresse différente : {addr[0]} (attendu : {real_adress})")
                 continue
-
+            ping(addr[0], count=1, payload=data)
             # On récupère le header ICMP (30 octets) + payload
             icmp_header_len = 28
             payload = data[icmp_header_len:]
-            writer_b64(payload.decode(), chunk_file)
+            try:
+                chunk = payload.decode("ascii")  # Base64 is ASCII-safe
+                writer_b64(chunk, chunk_file)
+            except UnicodeDecodeError:
+                print(f"[ICMP] Paquet invalide reçu, ignoré : {payload[:20]}...")
+                continue
             paquets_recus.append(payload)
 
             if nombre_paquets and len(paquets_recus) >= nombre_paquets:
@@ -529,10 +541,6 @@ def start_icmp_server(chunk_file="recu.txt", nombre_paquets=None):
     except KeyboardInterrupt:
         print("\n[*] Arrêt manuel du serveur.")
 
-    # Reconstruction du fichier
-    with open(chunk_file, "wb") as f:
-        for paquet in paquets_recus:
-            f.write(paquet)
     print(f"[*] Fichier reconstruit dans {chunk_file}")
 
 # ========================
@@ -540,8 +548,8 @@ def start_icmp_server(chunk_file="recu.txt", nombre_paquets=None):
 # ========================
 
 def start_snmp_server(chunk_file):
-    loop = asyncio.new_event_loop()  # Create a new event loop
-    asyncio.set_event_loop(loop)      # Set the new event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     snmpEngine = engine.SnmpEngine()  
 
     config.add_transport(
@@ -585,12 +593,11 @@ def start_snmp_server(chunk_file):
 
     snmpEngine.transport_dispatcher.job_started(1)
     try:
-        snmpEngine.transport_dispatcher.run_dispatcher(timeout=30)
+        snmpEngine.transport_dispatcher.run_dispatcher()
     except KeyboardInterrupt:
         pass
     finally:
         print(f"[!] Aucune activité SNMP depuis {TIMEOUT}s — arrêt du serveur SNMP")
-        # Fermer proprement le dispatcher pour éviter les avertissements de tâches en attente
         try:
             snmpEngine.transport_dispatcher.close_dispatcher()
         except Exception as e:
@@ -615,13 +622,8 @@ def start_tor_server(chunk_file, port=8080):
         time.sleep(10)  # pour laisser le temps à Tor de se connecter
     
     elif system == "Windows":
-        tor_path = pathlib.Path("../tor/tor.exe")
-        if not tor_path.exists():
-            print("Tor executable not found at ../tor/tor.exe")
-            return
-        process = subprocess.Popen((str(tor_path), "-f", "../tor/torrc"))
-        print("Waiting for Tor to bootstrap...")
-        time.sleep(10)  # pour laisser le temps à Tor de se connecter
+        print("You need to be running this on linux for this feature to work.")
+        return
 
     @app.route("/upload", methods=["POST"])
     def upload():

