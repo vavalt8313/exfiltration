@@ -1,32 +1,24 @@
 #!/usr/bin python3
 import os
 import sys
-import ssl
 import uuid
 import time
-import aioftp
 import socket
 import signal
-import pathlib
 import asyncio
-import binascii
 import platform
 import asyncssh
 import threading
 import subprocess
 import http.server
 import socketserver
-from pythonping import ping
-from pysnmp.smi import instrum
 from urllib.parse import parse_qs
 from email import message_from_bytes
 from dnslib import RR, QTYPE, TXT, A
 from pyftpdlib.servers import FTPServer
 from pysnmp.entity import engine, config
-from scapy.all import IP, ICMP, Raw, sniff
 from aiosmtpd.controller import Controller
 from pysnmp.carrier.asyncio.dgram import udp
-from pysnmp.proto.rfc1902 import OctetString
 from base64 import b32decode, urlsafe_b64decode
 from dnslib.server import DNSServer, BaseResolver
 from pyftpdlib.authorizers import DummyAuthorizer
@@ -74,6 +66,14 @@ def writer_dns(chunk, chunk_file):
             print(f"[DNS] Erreur écriture chunk : {e}")
     else:
         print("[DNS] Chunk vide reçu")
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev & PyInstaller"""
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS  # folder PyInstaller uses
+    else:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 # ========================
 # SERVEUR SMTP
@@ -321,7 +321,7 @@ def start_ftps_server(chunk_file):
 
     handler = MyFTPSHandler
     handler.authorizer = authorizer
-    handler.certfile = "certificat/server.pem"
+    handler.certfile = resource_path("certificat/server.pem")
     handler.tls_control_required = False  # explicit FTPS
     handler.tls_data_required = True      # encrypt data channel
 
@@ -365,8 +365,8 @@ async def ssh_server():
     server = await asyncssh.create_server(
         lambda: MySSHServer(),
         '', PORT_SSH,
-        authorized_client_keys='keys/authorized_keys',
-        server_host_keys=['keys/ssh_host_key'],
+        authorized_client_keys=resource_path('keys/authorized_keys'),
+        server_host_keys=[resource_path('keys/ssh_host_key')],
         process_factory=handle_client
     )
     print("[SSH] Serveur démarré sur le port 22")
@@ -468,8 +468,8 @@ async def start_sftp_async(chunk_file):
     server = await asyncssh.create_server(
         lambda: MySSHServer_SFTP(),
         '', PORT_SFTP,
-        authorized_client_keys='keys/authorized_keys',
-        server_host_keys=['keys/ssh_host_key'],
+        authorized_client_keys=resource_path('keys/authorized_keys'),
+        server_host_keys=[resource_path('keys/ssh_host_key')],
         sftp_factory=lambda chan: MySFTPServer(chan, chunk_file)
     )
 
@@ -510,12 +510,11 @@ def start_icmp_server(chunk_file="recu.txt", nombre_paquets=None):
     print("[*] Serveur ICMP démarré. En attente des paquets...")
     first_packet = True
     real_adress = None
-
     paquets_recus = []
 
     try:
         while True:
-            data, addr = s.recvfrom(1500)
+            data, addr = s.recvfrom(2030)
             if first_packet:
                 real_adress = addr[0]
                 first_packet = False
@@ -524,24 +523,26 @@ def start_icmp_server(chunk_file="recu.txt", nombre_paquets=None):
             if addr[0] != real_adress:
                 print(f"[ICMP] Paquet reçu d'une adresse différente : {addr[0]} (attendu : {real_adress})")
                 continue
-            ping(addr[0], count=1, payload=data)
+            
             # On récupère le header ICMP (30 octets) + payload
             icmp_header_len = 28
             payload = data[icmp_header_len:]
-            try:
-                chunk = payload.decode("ascii")  # Base64 is ASCII-safe
-                writer_b64(chunk, chunk_file)
-            except UnicodeDecodeError:
-                print(f"[ICMP] Paquet invalide reçu, ignoré : {payload[:20]}...")
-                continue
             paquets_recus.append(payload)
 
             if nombre_paquets and len(paquets_recus) >= nombre_paquets:
+                print(f"[ICMP] Dernier paquet reçu ({len(payload)} octets), total : {len(paquets_recus)}")
                 break
+            else:
+                print(f"[ICMP] Paquet reçu ({len(payload)} octets), total : {len(paquets_recus)}")
     except KeyboardInterrupt:
         print("\n[*] Arrêt manuel du serveur.")
 
+    # Reconstruction du fichier
+    with open(chunk_file, "wb") as f:
+        for paquet in paquets_recus:
+            f.write(urlsafe_b64decode(paquet))
     print(f"[*] Fichier reconstruit dans {chunk_file}")
+    LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("icmp"))
 
 # ========================
 # EXFILTRATION SNMP
@@ -619,7 +620,7 @@ def start_tor_server(chunk_file, port=8080):
     if system == "Linux":
         process = subprocess.Popen(("sudo", "-u", "debian-tor", "tor", "-f", "/etc/tor/torrc"))
         print("Waiting for Tor to bootstrap...")
-        time.sleep(10)  # pour laisser le temps à Tor de se connecter
+        time.sleep(10)  # pour laisser le temps à Tor de se connecter ce grand fatigué
     
     elif system == "Windows":
         print("You need to be running this on linux for this feature to work.")
@@ -668,7 +669,7 @@ def signal_listener():
                     data_list = data.decode().strip()
                     print(f"[+] Signal reçu de {addr[0]}: {data_list}")
                     try:
-                        arg, signal_type = data_list.split(" ")
+                        arg, signal_type, nb_packets = data_list.split(" ")
                         chunk_file = arg.split("\\")[-1].split("/")[-1]
                         chunk_file = os.path.join("reception/", chunk_file)
 
@@ -702,7 +703,7 @@ def signal_listener():
                             thread.start()
                         elif signal_type == "icmp" and (signal_type not in LIST_OPENED_SERVERS):
                             LIST_OPENED_SERVERS.append(signal_type)
-                            thread = threading.Thread(target=start_icmp_server, args=(chunk_file,), daemon=True)
+                            thread = threading.Thread(target=start_icmp_server, args=(chunk_file, int(nb_packets)), daemon=True)
                             thread.start()
                         elif signal_type == "snmp" and (signal_type not in LIST_OPENED_SERVERS):
                             LIST_OPENED_SERVERS.append(signal_type)
