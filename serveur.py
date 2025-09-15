@@ -183,7 +183,7 @@ def start_http_server(chunk_file, nombre_paquets=None):
             while True:
                 time.sleep(1)
                 elapsed = time.time() - httpd.last_activity_time
-                if elapsed > TIMEOUT:
+                if elapsed > TIMEOUT * 20:
                     print(f"[!] Aucune activité HTTP depuis {TIMEOUT}s — arrêt du serveur")
                     httpd.shutdown()
                     LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("http"))
