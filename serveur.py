@@ -737,12 +737,14 @@ def start_tor_server(chunk_file, nombre_paquets=None, port=8080):
         print("nb_paquets:", nb_paquets, "total_paquets:", nombre_paquets)
         if nombre_paquets and nb_paquets >= nombre_paquets:
             print(f"[*] Nombre de chunks atteint ({nombre_paquets}) — arrêt du serveur")
+            LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("tor"))
             func = request.environ.get('werkzeug.server.shutdown')
             if func:
                 func()
             else:
                 process.send_signal(signal.SIGINT)
-            LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("tor"))
+            print("atgydhujfjghdsyuhijdfoksghufjksghufjksghrfjkdfkfkl")
+            return jsonify({"status": f"Received {file.filename}"}), 200
         return jsonify({"status": f"Received {file.filename}"}), 200
 
     @app.route("/")
