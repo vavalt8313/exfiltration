@@ -704,7 +704,7 @@ def start_snmp_server(chunk_file, nombre_paquets=None):
 def start_tor_server(chunk_file, nombre_paquets=None, port=8080):
 
     app = Flask(__name__)
-    nb_paquets_tor = 0
+    nb_paquets = 0
 
     if os.path.exists(chunk_file):
         os.remove(chunk_file)
@@ -722,7 +722,7 @@ def start_tor_server(chunk_file, nombre_paquets=None, port=8080):
 
     @app.route("/upload", methods=["POST"])
     def upload():
-        nonlocal nb_paquets_tor
+        nonlocal nb_paquets
         filename = f"chunk_{uuid.uuid4().hex[:8]}.txt"
         file = request.files.get("file")
         if not file:
@@ -733,9 +733,9 @@ def start_tor_server(chunk_file, nombre_paquets=None, port=8080):
         with open(chunk_file, "ab") as f:
             f.write(chunk)
         os.remove(filename)
-        nb_paquets_tor += 1
-        print(f"\n chunk n°{nb_paquets_tor} / {nombre_paquets if nombre_paquets else '∞'} reçu et écrit dans {chunk_file} ({len(chunk)} octets)")
-        if nombre_paquets and nb_paquets_tor >= nombre_paquets:
+        nb_paquets += 1
+        print("nb_paquets:", nb_paquets, "total_paquets:", nombre_paquets)
+        if nombre_paquets and nb_paquets >= nombre_paquets:
             print(f"[*] Nombre de chunks atteint ({nombre_paquets}) — arrêt du serveur")
             func = request.environ.get('werkzeug.server.shutdown')
             if func:
