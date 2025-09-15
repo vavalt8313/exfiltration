@@ -150,7 +150,6 @@ class CnCRequestHandler(http.server.BaseHTTPRequestHandler):
             return
 
         self.server.last_activity_time = time.time()
-        self.server.nb_of_chunks += 1
         length = int(self.headers.get('Content-Length', 0))
         post_data = self.rfile.read(length).decode()
         params = parse_qs(post_data)
@@ -162,6 +161,7 @@ class CnCRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
+        self.server.nb_of_chunks += 1
 
     def log_message(self, format, *args):
         return  # Supprime les logs par défaut
@@ -805,7 +805,7 @@ def signal_listener():
                             LIST_OPENED_SERVERS.append(signal_type)
                             thread = threading.Thread(target=start_snmp_server, args=(chunk_file, int(nb_packets)))
                             thread.start()
-                        elif signal_type == "tor" and (signal_type not in LIST_OPENED_SERVERS): # fait
+                        elif signal_type == "tor" and (signal_type not in LIST_OPENED_SERVERS): # pas faisable
                             LIST_OPENED_SERVERS.append(signal_type)
                             thread = threading.Thread(target=start_tor_server, args=(chunk_file, int(nb_packets)), daemon=True)
                             thread.start()
