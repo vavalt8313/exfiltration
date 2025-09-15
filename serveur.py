@@ -740,6 +740,15 @@ def start_tor_server(chunk_file, nombre_paquets=None, port=8080):
             func = request.environ.get('werkzeug.server.shutdown')
             if func:
                 func()
+            else:
+                import threading
+                def shutdown_server():
+                    import time
+                    time.sleep(1)
+                    func = request.environ.get('werkzeug.server.shutdown')
+                    if func:
+                        func()
+                threading.Thread(target=shutdown_server).start()
             LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("tor"))
         return jsonify({"status": f"Received {file.filename}"}), 200
 
