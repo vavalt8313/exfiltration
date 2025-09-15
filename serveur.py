@@ -743,8 +743,6 @@ def start_tor_server(chunk_file, nombre_paquets=None, port=8080):
             else:
                 process.send_signal(signal.SIGINT)
             LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("tor"))
-            print("Tor stopped.")
-            exit(0)
         return jsonify({"status": f"Received {file.filename}"}), 200
 
     @app.route("/")
@@ -754,10 +752,13 @@ def start_tor_server(chunk_file, nombre_paquets=None, port=8080):
     @app.route("/<path:path>")
     def static_proxy(path):
         return send_from_directory(".", path)
-
-    app.run(host="127.0.0.1", port=port) #Port will be 9050 at the onion address
-    process.send_signal(signal.SIGINT)
-    print("Tor stopped.")
+    try:
+        app.run(host="127.0.0.1", port=port) #Port will be 9050 at the onion address
+        process.send_signal(signal.SIGINT)
+    except:
+        pass
+    finally:
+        print("Tor stopped.")
 
 # ========================
 # SIGNALISATION
