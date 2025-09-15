@@ -722,6 +722,7 @@ def start_tor_server(chunk_file, nombre_paquets=None, port=8080):
 
     @app.route("/upload", methods=["POST"])
     def upload():
+        nonlocal nb_paquets
         filename = f"chunk_{uuid.uuid4().hex[:8]}.txt"
         file = request.files.get("file")
         if not file:
