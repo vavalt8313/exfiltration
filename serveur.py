@@ -103,16 +103,9 @@ def start_smtp_server(chunk_file, nombre_paquets=None):
     mh = MailHandler()
     def watchdog():
         start_time = time.time()
-        print("Démarrage du watchdog SMTP")
         while True:
-            print(".", end="", flush=True)
             time.sleep(1)
-            if mh.last_activity_time - start_time > TIMEOUT:
-                print(f"[!] Aucune activité SMTP depuis {TIMEOUT}s — arrêt du serveur SMTP")
-                controller.stop()
-                LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("smtp"))
-                break
-            elif nombre_paquets and mh.nb_of_chunks >= nombre_paquets:
+            if nombre_paquets and mh.nb_of_chunks >= nombre_paquets:
                 print(f"[*] Nombre de chunks atteint ({nombre_paquets}) — arrêt du serveur SMTP")
                 controller.stop()
                 LIST_OPENED_SERVERS.pop(LIST_OPENED_SERVERS.index("smtp"))
