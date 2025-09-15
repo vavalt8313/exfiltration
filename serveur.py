@@ -743,7 +743,6 @@ def start_tor_server(chunk_file, nombre_paquets=None, port=8080):
             else:
                 import threading
                 def shutdown_server():
-                    import time
                     time.sleep(1)
                     func = request.environ.get('werkzeug.server.shutdown')
                     if func:
