@@ -733,13 +733,10 @@ def start_tor_server(chunk_file, nombre_paquets=None, port=8080):
     @app.route("/<path:path>")
     def static_proxy(path):
         return send_from_directory(".", path)
-    try:
-        app.run(host="127.0.0.1", port=port) #Port will be 9050 at the onion address
-        process.send_signal(signal.SIGINT)
-    except:
-        pass
-    finally:
-        print("Tor stopped.")
+    
+    app.run(host="127.0.0.1", port=port) #Port will be 9050 at the onion address
+    process.send_signal(signal.SIGINT)
+    print("Tor stopped.")
 
 # ========================
 # SIGNALISATION
