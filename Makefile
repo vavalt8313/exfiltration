@@ -12,8 +12,9 @@ ifeq ($(OS),Linux)
 	sudo $(PIP) install -r ./mandatory.txt --break-system-packages
 else
 	$(PIP) install -r ./mandatory.txt
-client
-server
+endif
+$(client)
+$(server)
 
 # Build client executable from decoupage.py with client_key
 client:
