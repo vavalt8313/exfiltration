@@ -8,13 +8,13 @@ OS := $(shell uname 2>/dev/null || echo Windows)
 DIST := dist
 
 all:
-	ifeq ($(OS),Linux)
-		sudo $(PIP) install -R ./mandatory.txt --break-system-packages
-	else
-		$(PIP) install -R ./mandatory.txt
-	endif
-		client
-		server
+ifeq ($(OS),Linux)
+	sudo $(PIP) install -R ./mandatory.txt --break-system-packages
+else
+	$(PIP) install -R ./mandatory.txt
+endif
+	client
+	server
 
 # Build client executable from decoupage.py with client_key
 client:
