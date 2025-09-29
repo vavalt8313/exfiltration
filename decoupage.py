@@ -77,7 +77,7 @@ def resource_path(relative_path):
 # ========================
 
 def envoyer_paquets_smtp(destination, parties):
-    port = 1025
+    port = 25
     to_addr = 'destinataire@localhost'
 
     for i, partie in enumerate(tqdm(parties, desc="Envoi SMTP")):
@@ -426,3 +426,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
