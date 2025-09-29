@@ -13,8 +13,8 @@ ifeq ($(OS),Linux)
 else
 	$(PIP) install -r ./mandatory.txt
 endif
-	client
-	server
+client
+server
 
 # Build client executable from decoupage.py with client_key
 client:
