@@ -9,3 +9,4 @@ aiosmtpd
 pysnmp
 tqdm
 requests
+pythonping
