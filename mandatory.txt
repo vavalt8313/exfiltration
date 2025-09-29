@@ -7,3 +7,5 @@ asyncssh
 scapy
 aiosmtpd
 pysnmp
+tqdm
+requests
