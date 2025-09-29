@@ -9,9 +9,9 @@ DIST := dist
 
 all:
 ifeq ($(OS),Linux)
-	sudo $(PIP) install -R ./mandatory.txt --break-system-packages
+	sudo $(PIP) install -r ./mandatory.txt --break-system-packages
 else
-	$(PIP) install -R ./mandatory.txt
+	$(PIP) install -r ./mandatory.txt
 endif
 	client
 	server
