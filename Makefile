@@ -7,7 +7,14 @@ OS := $(shell uname 2>/dev/null || echo Windows)
 
 DIST := dist
 
-all: client server
+all:
+	ifeq ($(OS),Linux)
+		sudo $(PIP) install -R ./mandatory.txt --break-system-packages
+	else
+		$(PIP) install -R ./mandatory.txt
+	endif
+		client
+		server
 
 # Build client executable from decoupage.py with client_key
 client:
