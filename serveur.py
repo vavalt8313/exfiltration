@@ -33,7 +33,7 @@ PORT_FTP = 21
 PORT_HTTP = 80
 PORT_FTPS = 2121
 PORT_SFTP = 2222
-PORT_SMTP = 1025
+PORT_SMTP = 25
 PORT_SNMP = 16100
 SIGNAL_PORT = 9999
 CHUNK_FILE_SSH = ""
@@ -822,3 +822,4 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n[!] Serveur arrêté")
+
